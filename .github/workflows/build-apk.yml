@@ -28,63 +28,92 @@ jobs:
             unzip -o CN_Upscaler_Android_Studio_Project.zip -d ./
           fi
 
-      - name: Inspect and Auto-Fix Kotlin Syntax Errors
+      - name: Auto-Fix Kotlin Files
         run: |
-          echo "=== Fixing JobEntity.kt ==="
-          sed -i 's/Index(value = \["status"\])/Index(value = ["statusName"])/g' app/src/main/java/com/cn/upscaler/core/database/JobEntity.kt
-          sed -i 's/"status"/"statusName"/g' app/src/main/java/com/cn/upscaler/core/database/JobEntity.kt
-
-          echo "=== Lines around TensorPreprocessor.kt:26 ==="
-          nl -ba app/src/main/java/com/cn/upscaler/core/ai/TensorPreprocessor.kt | sed -n '20,32p'
-
-          echo "=== Lines around AboutPrivacyScreen.kt:35-56 ==="
-          nl -ba app/src/main/java/com/cn/upscaler/feature/about/AboutPrivacyScreen.kt | sed -n '34,56p'
-
-          echo "=== Lines around HomeScreen.kt:261 ==="
-          nl -ba app/src/main/java/com/cn/upscaler/feature/home/HomeScreen.kt | sed -n '255,266p'
-
-          echo "=== Lines around ImageSelectionScreen.kt:110 ==="
-          nl -ba app/src/main/java/com/cn/upscaler/feature/selection/ImageSelectionScreen.kt | sed -n '105,115p'
-
           python3 - << 'EOF'
           import re
 
-          # Fix TensorPreprocessor.kt line 26 if missing closing bracket
-          p1 = "app/src/main/java/com/cn/upscaler/core/ai/TensorPreprocessor.kt"
-          with open(p1, "r") as f:
+          # 1. Fix JobEntity.kt
+          p_job = "app/src/main/java/com/cn/upscaler/core/database/JobEntity.kt"
+          with open(p_job, "r") as f:
+              c = f.read()
+          c = c.replace('Index(value = ["status"])', 'Index(value = ["statusName"])')
+          with open(p_job, "w") as f:
+              f.write(c)
+
+          # 2. Inspect and Fix TensorPreprocessor.kt line 26
+          p_tensor = "app/src/main/java/com/cn/upscaler/core/ai/TensorPreprocessor.kt"
+          with open(p_tensor, "r") as f:
               lines = f.readlines()
+          print("--- TensorPreprocessor.kt (20-32) ---")
+          for i in range(19, min(32, len(lines))):
+              print(f"{i+1}: {lines[i]}", end="")
+          # Fix character literal or bracket issue on line 26
           if len(lines) >= 26:
-              l26 = lines[25].rstrip("\n")
-              if l26.count("[") > l26.count("]"):
-                  lines[25] = l26 + "]\n"
-              elif l26.count("(") > l26.count(")"):
-                  lines[25] = l26 + ")\n"
-          with open(p1, "w") as f:
+              l = lines[25]
+              # Often caused by array syntax or missing bracket before comment/newline
+              if l.count('[') > l.count(']'):
+                  lines[25] = l.rstrip('\r\n') + ']\n'
+              elif 'IntArray(' in l or 'FloatArray(' in l:
+                  pass
+          with open(p_tensor, "w") as f:
               f.writelines(lines)
 
-          # Fix unescaped inner quotes in Text("...") calls across those UI files
-          ui_files = [
-              "app/src/main/java/com/cn/upscaler/feature/about/AboutPrivacyScreen.kt",
-              "app/src/main/java/com/cn/upscaler/feature/home/HomeScreen.kt",
-              "app/src/main/java/com/cn/upscaler/feature/selection/ImageSelectionScreen.kt"
-          ]
-          for path in ui_files:
-              with open(path, "r") as f:
-                  content = f.read()
-              # Fix broken multi-line strings or unescaped quotes inside Text(...)
-              fixed_lines = []
-              for line in content.splitlines():
-                  s = line.strip()
-                  # If a line has more than 2 quotes and is a single string assignment/parameter
-                  if s.count('"') > 2 and ('text =' in s or 'Text(' in s or s.startswith('"')):
+          # 3. Helper to fix broken literal newlines inside normal double-quoted strings
+          def fix_broken_strings(filepath):
+              with open(filepath, "r") as f:
+                  raw = f.read()
+              print(f"\n---Original snippet from {filepath}---")
+              for idx, line in enumerate(raw.splitlines(), 1):
+                  if idx in range(34, 56) or idx in range(255, 295) or idx in range(105, 196):
+                      print(f"{idx}: {line}")
+
+              # Join lines where a normal string '"' was started but not closed before newline
+              out_lines = []
+              in_Broken_str = False
+              buffer = ""
+              for line in raw.splitlines():
+                  # Count unescaped quotes outside ${...}
+                  cleaned = re.sub(r'\$\{[^}]*\}', '', line)
+                  q_count = len(re.findall(r'(?<!\\)"', cleaned))
+                  if not in_Broken_str:
+                      if q_count % 2 == 1 and not '"""' in line:
+                          in_Broken_str = True
+                          buffer = line.rstrip() + " "
+                      else:
+                          out_lines.append(line)
+                  else:
+                      buffer += line.strip()
+                      cleaned_buf = re.sub(r'\$\{[^}]*\}', '', buffer)
+                      if len(re.findall(r'(?<!\\)"', cleaned_buf)) % 2 == 0:
+                          in_Broken_str = False
+                          out_lines.append(buffer)
+                          buffer = ""
+                      else:
+                          buffer += " "
+              if buffer:
+                  out_lines.append(buffer)
+
+              # Also escape inner unescaped quotes inside simple Text("...") without ${}
+              final_lines = []
+              for line in out_lines:
+                  if '${' not in line and line.count('"') > 2 and ('Text(' in line or 'text =' in line or 'title =' in line or 'description =' in line):
                       first = line.find('"')
                       last = line.rfind('"')
                       if first != -1 and last > first:
                           inner = line[first+1:last].replace('\\"', '"').replace('"', '\\"')
                           line = line[:first+1] + inner + line[last:]
-                  fixed_lines.append(line)
-              with open(path, "w") as f:
-                  f.write("\n".join(fixed_lines) + "\n")
+                  final_lines.append(line)
+
+              with open(filepath, "w") as f:
+                  f.write("\n".join(final_lines) + "\n")
+
+          for fp in [
+              "app/src/main/java/com/cn/upscaler/feature/about/AboutPrivacyScreen.kt",
+              "app/src/main/java/com/cn/upscaler/feature/home/HomeScreen.kt",
+              "app/src/main/java/com/cn/upscaler/feature/selection/ImageSelectionScreen.kt"
+          ]:
+              fix_broken_strings(fp)
           EOF
 
       - name: Setup Gradle
