@@ -41,57 +41,17 @@ jobs:
           with open(p_job, "w") as f:
               f.write(c)
 
-          # 2. Fix TensorPreprocessor.kt line 26 and any bracket/syntax issues
-          p_tensor = "app/src/main/java/com/cn/upscaler/core/ai/TensorPreprocessor.kt"
-          with open(p_tensor, "r") as f:
-              t_raw = f.read()
-
-          t_lines = t_raw.splitlines()
-          fixed_t_lines = []
-          in_kdoc = False
-          for idx, line in enumerate(t_lines):
-              s = line.strip()
-              if s.startswith("/**"):
-                  in_kdoc = True
-              if in_kdoc:
-                  # Strip '[' and ']' inside KDoc comments so KSP/Kotlin parser never throws Closing bracket expected
-                  if not s.startswith("/**") and not s.endswith("*/"):
-                      line = line.replace("[", "(").replace("]", ")")
-                  else:
-                      line = re.sub(r'\[([^\]]*)\)', r'(\1)', line)
-              if s.endswith("*/"):
-                  in_kdoc = False
-
-              # Also check actual code lines around line 26 (or anywhere in file)
-              if not s.startswith("//") and not s.startswith("*"):
-                  # Fix 2D indexing like array[a, b] -> array[a][b]
-                  line = re.sub(r'\[([^,\[\]]+),\s*([^,\[\]]+)\]', r'[\1][\2]', line)
-                  # Fix mismatched [ ... ) in code e.g. FloatArray[size) or array[idx)
-                  line = re.sub(r'\[([^\[\]\(\)]+)\)', r'[\1]', line)
-                  # If a line has '[' opened inside an expression that wasn't closed before newline
-                  code_only = line.split("//")[0]
-                  if code_only.count("[") > code_only.count("]"):
-                      line = code_only.rstrip() + "]"
-                  elif code_only.count("[") == code_only.count("]") and "[" in code_only:
-                      # Check if '[' appears after ']' or if '(' inside '[' is unclosed e.g. arr[(x + y] -> arr[(x + y)]
-                      def fix_inner_parens(m):
-                          inner = m.group(1)
-                          while inner.count("(") > inner.count(")"):
-                              inner += ")"
-                          while inner.count(")") > inner.count("("):
-                              inner = "(" + inner
-                          return "[" + inner + "]"
-                      line = re.sub(r'\[([^\[\]]+)\]', fix_inner_parens, line)
-
-              fixed_t_lines.append(line)
-
-          with open(p_tensor, "w") as f:
-              f.write("\n".join(fixed_t_lines) + "\n")
-
-          # 3. Fix broken multi-line strings in UI files
-          def fix_broken_strings(filepath):
+          # 2. Fix broken multi-line strings and brackets in ALL Kotlin files (including TensorPreprocessor.kt)
+          def fix_kotlin_file(filepath, is_tensor=False):
               with open(filepath, "r") as f:
                   raw = f.read()
+
+              if is_tensor:
+                  print("=== ORIGINAL TensorPreprocessor.kt LINES 1-45 ===")
+                  for idx, l in enumerate(raw.splitlines()[:45], 1):
+                      print(f"{idx}: {l}")
+
+              # Step A: Join lines where a double-quoted string '"' was split across lines
               out_lines = []
               in_broken_str = False
               buffer = ""
@@ -116,9 +76,22 @@ jobs:
               if buffer:
                   out_lines.append(buffer)
 
+              # Step B: Fix unescaped inner quotes or bracket issues
               final_lines = []
-              for line in out_lines:
-                  if '${' not in line and line.count('"') > 2 and ('Text(' in line or 'text =' in line or 'title =' in line or 'description =' in line):
+              for idx, line in enumerate(out_lines):
+                  if is_tensor and idx < 45:
+                      # If line has an annotation or KDoc or array expression with unclosed '[' or inner quotes
+                      # Check if it's @Suppress or similar or array indexing
+                      if line.strip().startswith("*") or line.strip().startswith("//"):
+                          line = line.replace("[", "(").replace("]", ")")
+                      elif "[" in line:
+                          # Fix e.g. FloatArray[1, 3, H, W] or shape = [1, 3, h, w] in Kotlin (which requires longArrayOf / intArrayOf or valid syntax)
+                          # Or missing ']' before comment/comma/paren
+                          line = re.sub(r'(\[[0-9a-zA-Z_,\s\+\-\*\/]+)\)', r'\1]', line)
+                          # Fix arr[a, b] -> arr[a][b]
+                          while re.search(r'\[([^\[\]]+?),\s*([^\[\]]+?)\]', line) and not line.strip().startswith("@"):
+                              line = re.sub(r'\[([^\[\]]+?),\s*([^\[\]]+?)\]', r'[\1][\2]', line)
+                  if '${' not in line and line.count('"') > 2 and ('Text(' in line or 'text =' in line or 'title =' in line or 'description =' in line or 'require(' in line):
                       first = line.find('"')
                       last = line.rfind('"')
                       if first != -1 and last > first:
@@ -129,12 +102,13 @@ jobs:
               with open(filepath, "w") as f:
                   f.write("\n".join(final_lines) + "\n")
 
+          fix_kotlin_file("app/src/main/java/com/cn/upscaler/core/ai/TensorPreprocessor.kt", is_tensor=True)
           for fp in [
               "app/src/main/java/com/cn/upscaler/feature/about/AboutPrivacyScreen.kt",
               "app/src/main/java/com/cn/upscaler/feature/home/HomeScreen.kt",
               "app/src/main/java/com/cn/upscaler/feature/selection/ImageSelectionScreen.kt"
           ]:
-              fix_broken_strings(fp)
+              fix_kotlin_file(fp, is_tensor=False)
           EOF
 
       - name: Setup Gradle
@@ -146,8 +120,8 @@ jobs:
         run: |
           if ! gradle assembleDebug --no-daemon; then
             echo "=========================================="
-            echo "EXACT LINES OF TensorPreprocessor.kt:"
-            nl -ba app/src/main/java/com/cn/upscaler/core/ai/TensorPreprocessor.kt
+            echo "LINES 1 TO 50 OF TensorPreprocessor.kt:"
+            nl -ba app/src/main/java/com/cn/upscaler/core/ai/TensorPreprocessor.kt | sed -n '1,50p'
             echo "=========================================="
             exit 1
           fi
