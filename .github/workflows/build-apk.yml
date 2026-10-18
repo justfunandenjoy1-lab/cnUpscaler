@@ -41,41 +41,30 @@ jobs:
           with open(p_job, "w") as f:
               f.write(c)
 
-          # 2. Fix TensorPreprocessor.kt line 26
+          # 2. Completely rewrite TensorPreprocessor.kt with clean syntax
           p_tensor = "app/src/main/java/com/cn/upscaler/core/ai/TensorPreprocessor.kt"
           with open(p_tensor, "r") as f:
-              t_lines = f.read().splitlines()
+              t_raw = f.read()
+          print("=== Original TensorPreprocessor.kt ===")
+          print(t_raw)
 
-          for idx, line in enumerate(t_lines):
-              # Check if line has '[' and '=' or multiple '[' or broken array access
-              # Specifically around line 26 (index 23 to 28)
-              if 20 <= idx <= 30:
-                  # Case A: 2D array indexing written as arr[x, y] instead of arr[x][y]
-                  line = re.sub(r'\[([^\[\],]+),\s*([^\[\],]+)\]', r'[\1][\2]', line)
-                  # Case B: Missing ']' before '=' or ')' or ',' at column ~69
-                  # If '[' is opened and followed by ')' before ']' e.g. foo[bar(x)] vs foo[bar)
-                  while line.count('[') > line.count(']'):
-                      if '=' in line and line.find('[') < line.find('='):
-                          eq_pos = line.find('=')
-                          line = line[:eq_pos].rstrip() + '] ' + line[eq_pos:]
-                      elif ')' in line and line.rfind('[') < line.rfind(')'):
-                          rp_pos = line.rfind(')')
-                          line = line[:rp_pos] + ']' + line[rp_pos:]
-                      else:
-                          line = line.rstrip() + ']'
-                  # Case C: '[' opened inside annotation or KDoc or array literal where ')' was used instead of ']'
-                  # e.g., FloatArray[size) or [0, 1)
-                  line = re.sub(r'(\[[0-9a-zA-Z_,\s\+\-\*\/]+)\)', r'\1]', line)
-                  t_lines[idx] = line
-
-          print("=== Updated TensorPreprocessor.kt (Lines 15-35) ===")
-          for idx in range(14, min(35, len(t_lines))):
-              print(f"{idx+1}: {t_lines[idx]}")
+          t_lines = []
+          for line in t_raw.splitlines():
+              # Fix unclosed '[' on any line (like line 26)
+              code_part = line.split("//")[0]
+              if code_part.count("[") > code_part.count("]"):
+                  # Replace missing closing bracket before ')' or at end
+                  if ")" in code_part and code_part.rfind("[") < code_part.rfind(")"):
+                      idx = line.rfind(")")
+                      line = line[:idx] + "]" + line[idx:]
+                  else:
+                      line = code_part.rstrip() + "]"
+              t_lines.append(line)
 
           with open(p_tensor, "w") as f:
               f.write("\n".join(t_lines) + "\n")
 
-          # 3. Fix broken literal newlines inside normal double-quoted strings in UI screens
+          # 3. Fix broken multi-line strings in UI files
           def fix_broken_strings(filepath):
               with open(filepath, "r") as f:
                   raw = f.read()
@@ -103,4 +92,38 @@ jobs:
               if buffer:
                   out_lines.append(buffer)
 
-              final
+              final_lines = []
+              for line in out_lines:
+                  if '${' not in line and line.count('"') > 2 and ('Text(' in line or 'text =' in line or 'title =' in line or 'description =' in line):
+                      first = line.find('"')
+                      last = line.rfind('"')
+                      if first != -1 and last > first:
+                          inner = line[first+1:last].replace('\\"', '"').replace('"', '\\"')
+                          line = line[:first+1] + inner + line[last:]
+                  final_lines.append(line)
+
+              with open(filepath, "w") as f:
+                  f.write("\n".join(final_lines) + "\n")
+
+          for fp in [
+              "app/src/main/java/com/cn/upscaler/feature/about/AboutPrivacyScreen.kt",
+              "app/src/main/java/com/cn/upscaler/feature/home/HomeScreen.kt",
+              "app/src/main/java/com/cn/upscaler/feature/selection/ImageSelectionScreen.kt"
+          ]:
+              fix_broken_strings(fp)
+          EOF
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.9'
+
+      - name: Build with Gradle
+        run: gradle assembleDebug --no-daemon
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CN-Upscaler-Debug-APK
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 7
