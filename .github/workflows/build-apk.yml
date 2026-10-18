@@ -41,74 +41,79 @@ jobs:
           with open(p_job, "w") as f:
               f.write(c)
 
-          # 2. Fix broken multi-line strings and brackets in ALL Kotlin files (including TensorPreprocessor.kt)
-          def fix_kotlin_file(filepath, is_tensor=False):
-              with open(filepath, "r") as f:
-                  raw = f.read()
+          # 2. Fix TensorPreprocessor.kt comments ([ -> ()
+          p_tensor = "app/src/main/java/com/cn/upscaler/core/ai/TensorPreprocessor.kt"
+          with open(p_tensor, "r") as f:
+              t_lines = f.read().splitlines()
+          for idx in range(min(45, len(t_lines))):
+              if t_lines[idx].strip().startswith("*") or t_lines[idx].strip().startswith("//"):
+                  t_lines[idx] = t_lines[idx].replace("[", "(").replace("]", ")")
+          with open(p_tensor, "w") as f:
+              f.write("\n".join(t_lines) + "\n")
 
-              if is_tensor:
-                  print("=== ORIGINAL TensorPreprocessor.kt LINES 1-45 ===")
-                  for idx, l in enumerate(raw.splitlines()[:45], 1):
-                      print(f"{idx}: {l}")
+          # 3. Fix ModelSpecification.kt lines 50 and 78 (unescaped quotes around words like "New" or similar)
+          p_model = "app/src/main/java/com/cn/upscaler/core/ai/ModelSpecification.kt"
+          with open(p_model, "r") as f:
+              m_lines = f.read().splitlines()
+          for idx, line in enumerate(m_lines):
+              if '${' not in line and line.count('"') > 2:
+                  first = line.find('"')
+                  last = line.rfind('"')
+                  if first != -1 and last > first:
+                      inner = line[first+1:last].replace('\\"', '"').replace('"', '\\"')
+                      m_lines[idx] = line[:first+1] + inner + line[last:]
+          with open(p_model, "w") as f:
+              f.write("\n".join(m_lines) + "\n")
 
-              # Step A: Join lines where a double-quoted string '"' was split across lines
-              out_lines = []
-              in_broken_str = False
-              buffer = ""
-              for line in raw.splitlines():
-                  cleaned = re.sub(r'\$\{[^}]*\}', '', line)
-                  q_count = len(re.findall(r'(?<!\\)"', cleaned))
-                  if not in_broken_str:
-                      if q_count % 2 == 1 and '"""' not in line:
-                          in_broken_str = True
-                          buffer = line.rstrip() + " "
-                      else:
-                          out_lines.append(line)
-                  else:
-                      buffer += line.strip()
-                      cleaned_buf = re.sub(r'\$\{[^}]*\}', '', buffer)
-                      if len(re.findall(r'(?<!\\)"', cleaned_buf)) % 2 == 0:
-                          in_broken_str = False
-                          out_lines.append(buffer)
-                          buffer = ""
-                      else:
-                          buffer += " "
-              if buffer:
-                  out_lines.append(buffer)
+          # 4. Fix ImageProcessingPipeline.kt line 202 (val -> var and List<String?> -> MutableList<String>)
+          p_pipe = "app/src/main/java/com/cn/upscaler/core/processing/ImageProcessingPipeline.kt"
+          with open(p_pipe, "r") as f:
+              p_lines = f.read().splitlines()
 
-              # Step B: Fix unescaped inner quotes or bracket issues
-              final_lines = []
-              for idx, line in enumerate(out_lines):
-                  if is_tensor and idx < 45:
-                      # If line has an annotation or KDoc or array expression with unclosed '[' or inner quotes
-                      # Check if it's @Suppress or similar or array indexing
-                      if line.strip().startswith("*") or line.strip().startswith("//"):
-                          line = line.replace("[", "(").replace("]", ")")
-                      elif "[" in line:
-                          # Fix e.g. FloatArray[1, 3, H, W] or shape = [1, 3, h, w] in Kotlin (which requires longArrayOf / intArrayOf or valid syntax)
-                          # Or missing ']' before comment/comma/paren
-                          line = re.sub(r'(\[[0-9a-zA-Z_,\s\+\-\*\/]+)\)', r'\1]', line)
-                          # Fix arr[a, b] -> arr[a][b]
-                          while re.search(r'\[([^\[\]]+?),\s*([^\[\]]+?)\]', line) and not line.strip().startswith("@"):
-                              line = re.sub(r'\[([^\[\]]+?),\s*([^\[\]]+?)\]', r'[\1][\2]', line)
-                  if '${' not in line and line.count('"') > 2 and ('Text(' in line or 'text =' in line or 'title =' in line or 'description =' in line or 'require(' in line):
-                      first = line.find('"')
-                      last = line.rfind('"')
-                      if first != -1 and last > first:
-                          inner = line[first+1:last].replace('\\"', '"').replace('"', '\\"')
-                          line = line[:first+1] + inner + line[last:]
-                  final_lines.append(line)
+          # Find the variable reassigned around line 202
+          reassigned_vars = set()
+          for idx in range(max(0, 185), min(len(p_lines), 215)):
+              line = p_lines[idx].strip()
+              m = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*(.+)$', line)
+              if m and not line.startswith("val ") and not line.startswith("var "):
+                  var_name = m.group(1)
+                  reassigned_vars.add(var_name)
+                  # Also fix List<String?> to MutableList<String> on assignment
+                  rhs = m.group(2)
+                  if "MutableList" not in rhs:
+                      indent = p_lines[idx][:len(p_lines[idx]) - len(p_lines[idx].lstrip())]
+                      p_lines[idx] = f"{indent}{var_name} = ({rhs}).filterNotNull().toMutableList()"
 
-              with open(filepath, "w") as f:
-                  f.write("\n".join(final_lines) + "\n")
+          # Change 'val <var_name>' to 'var <var_name>' in ImageProcessingPipeline.kt
+          for idx, line in enumerate(p_lines):
+              for v in reassigned_vars:
+                  if re.search(rf'\bval\s+{v}\b', line):
+                      p_lines[idx] = re.sub(rf'\bval\s+{v}\b', f'var {v}', line)
 
-          fix_kotlin_file("app/src/main/java/com/cn/upscaler/core/ai/TensorPreprocessor.kt", is_tensor=True)
+          with open(p_pipe, "w") as f:
+              f.write("\n".join(p_lines) + "\n")
+
+          # 5. Fix unescaped inner quotes ONLY on single lines in AboutPrivacyScreen, HomeScreen, ImageSelectionScreen
+          # (Do NOT join lines across the whole file so we don't break line 120 of HomeScreen.kt)
           for fp in [
               "app/src/main/java/com/cn/upscaler/feature/about/AboutPrivacyScreen.kt",
               "app/src/main/java/com/cn/upscaler/feature/home/HomeScreen.kt",
               "app/src/main/java/com/cn/upscaler/feature/selection/ImageSelectionScreen.kt"
           ]:
-              fix_kotlin_file(fp, is_tensor=False)
+              with open(fp, "r") as f:
+                  u_lines = f.read().splitlines()
+              for idx, line in enumerate(u_lines):
+                  if '${' not in line and line.count('"') > 2:
+                      first = line.find('"')
+                      last = line.rfind('"')
+                      if first != -1 and last > first:
+                          # Ensure it's not multiple separate string arguments on the same line like Pair("a", "b")
+                          between = line[first+1:last]
+                          if not re.search(r'"\s*,\s*"', between):
+                              inner = between.replace('\\"', '"').replace('"', '\\"')
+                              u_lines[idx] = line[:first+1] + inner + line[last:]
+              with open(fp, "w") as f:
+                  f.write("\n".join(u_lines) + "\n")
           EOF
 
       - name: Setup Gradle
@@ -119,10 +124,12 @@ jobs:
       - name: Build with Gradle
         run: |
           if ! gradle assembleDebug --no-daemon; then
-            echo "=========================================="
-            echo "LINES 1 TO 50 OF TensorPreprocessor.kt:"
-            nl -ba app/src/main/java/com/cn/upscaler/core/ai/TensorPreprocessor.kt | sed -n '1,50p'
-            echo "=========================================="
+            echo "=== ModelSpecification.kt (45-85) ==="
+            nl -ba app/src/main/java/com/cn/upscaler/core/ai/ModelSpecification.kt | sed -n '45,85p'
+            echo "=== ImageProcessingPipeline.kt (175-215) ==="
+            nl -ba app/src/main/java/com/cn/upscaler/core/processing/ImageProcessingPipeline.kt | sed -n '175,215p'
+            echo "=== HomeScreen.kt (110-130 & 255-270) ==="
+            nl -ba app/src/main/java/com/cn/upscaler/feature/home/HomeScreen.kt | sed -n '110,130p;255,270p'
             exit 1
           fi
 
