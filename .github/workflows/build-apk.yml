@@ -28,7 +28,7 @@ jobs:
             unzip -o CN_Upscaler_Android_Studio_Project.zip -d ./
           fi
 
-      - name: Auto-Fix Kotlin Files
+      - name: Auto-Fix All Kotlin Files
         run: |
           python3 - << 'EOF'
           import re
@@ -41,44 +41,56 @@ jobs:
           with open(p_job, "w") as f:
               f.write(c)
 
-          # 2. Inspect and Fix TensorPreprocessor.kt line 26
+          # 2. Fix TensorPreprocessor.kt (line 26 Closing bracket expected)
           p_tensor = "app/src/main/java/com/cn/upscaler/core/ai/TensorPreprocessor.kt"
           with open(p_tensor, "r") as f:
-              lines = f.readlines()
-          print("--- TensorPreprocessor.kt (20-32) ---")
-          for i in range(19, min(32, len(lines))):
-              print(f"{i+1}: {lines[i]}", end="")
-          # Fix character literal or bracket issue on line 26
-          if len(lines) >= 26:
-              l = lines[25]
-              # Often caused by array syntax or missing bracket before comment/newline
-              if l.count('[') > l.count(']'):
-                  lines[25] = l.rstrip('\r\n') + ']\n'
-              elif 'IntArray(' in l or 'FloatArray(' in l:
-                  pass
-          with open(p_tensor, "w") as f:
-              f.writelines(lines)
+              t_content = f.read()
+          t_lines = t_content.splitlines()
+          print("=== TensorPreprocessor.kt Full Content ===")
+          for idx, l in enumerate(t_lines, 1):
+              print(f"{idx}: {l}")
 
-          # 3. Helper to fix broken literal newlines inside normal double-quoted strings
+          # Fix broken line 26 (e.g., broken newline inside [ ... ] or KDoc/comment bracket issue)
+          fixed_t_lines = []
+          i = 0
+          while i < len(t_lines):
+              line = t_lines[i]
+              code_part = line.split("//")[0]
+              # If a line has an unclosed '[' before newline or comment
+              if code_part.count("[") > code_part.count("]"):
+                  # Check if the closing ']' is on the next line
+                  if i + 1 < len(t_lines) and "]" in t_lines[i + 1] and t_lines[i + 1].count("]") > t_lines[i + 1].count("["):
+                      combined = code_part.rstrip() + " " + t_lines[i + 1].lstrip()
+                      fixed_t_lines.append(combined)
+                      i += 2
+                      continue
+                  else:
+                      # Close the bracket before comment or at the end of expression
+                      if "//" in line:
+                          parts = line.split("//", 1)
+                          line = parts[0].rstrip() + "] // " + parts[1]
+                      else:
+                          line = line.rstrip() + "]"
+              # Also check if inside a KDoc/comment or annotation there's an unclosed bracket or broken string
+              fixed_t_lines.append(line)
+              i += 1
+
+          with open(p_tensor, "w") as f:
+              f.write("\n".join(fixed_t_lines) + "\n")
+
+          # 3. Fix broken literal newlines inside normal double-quoted strings in UI screens
           def fix_broken_strings(filepath):
               with open(filepath, "r") as f:
                   raw = f.read()
-              print(f"\n---Original snippet from {filepath}---")
-              for idx, line in enumerate(raw.splitlines(), 1):
-                  if idx in range(34, 56) or idx in range(255, 295) or idx in range(105, 196):
-                      print(f"{idx}: {line}")
-
-              # Join lines where a normal string '"' was started but not closed before newline
               out_lines = []
-              in_Broken_str = False
+              in_broken_str = False
               buffer = ""
               for line in raw.splitlines():
-                  # Count unescaped quotes outside ${...}
                   cleaned = re.sub(r'\$\{[^}]*\}', '', line)
                   q_count = len(re.findall(r'(?<!\\)"', cleaned))
-                  if not in_Broken_str:
-                      if q_count % 2 == 1 and not '"""' in line:
-                          in_Broken_str = True
+                  if not in_broken_str:
+                      if q_count % 2 == 1 and '"""' not in line:
+                          in_broken_str = True
                           buffer = line.rstrip() + " "
                       else:
                           out_lines.append(line)
@@ -86,7 +98,7 @@ jobs:
                       buffer += line.strip()
                       cleaned_buf = re.sub(r'\$\{[^}]*\}', '', buffer)
                       if len(re.findall(r'(?<!\\)"', cleaned_buf)) % 2 == 0:
-                          in_Broken_str = False
+                          in_broken_str = False
                           out_lines.append(buffer)
                           buffer = ""
                       else:
@@ -94,7 +106,6 @@ jobs:
               if buffer:
                   out_lines.append(buffer)
 
-              # Also escape inner unescaped quotes inside simple Text("...") without ${}
               final_lines = []
               for line in out_lines:
                   if '${' not in line and line.count('"') > 2 and ('Text(' in line or 'text =' in line or 'title =' in line or 'description =' in line):
