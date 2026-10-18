@@ -24,19 +24,17 @@ jobs:
 
       - name: Unzip Project Files
         run: |
-          unzip -o CN_Upscaler_Android_Studio_Project.zip -d ./
+          if [ -f "CN_Upscaler_Android_Studio_Project.zip" ]; then
+            unzip -o CN_Upscaler_Android_Studio_Project.zip -d ./
+          fi
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
-
-      - name: Fix gradlew script
-        run: |
-          sed -i -e 's/\r$//' gradlew
-          sed -i 's/"-Xmx64m"/-Xmx64m/g' gradlew
-          chmod +x gradlew
+        with:
+          gradle-version: '8.7'
 
       - name: Build with Gradle
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
