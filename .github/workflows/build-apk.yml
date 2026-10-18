@@ -28,13 +28,13 @@ jobs:
             unzip -o CN_Upscaler_Android_Studio_Project.zip -d ./
           fi
 
-      - name: Clean and Fix UI Files Directly
+      - name: Apply Verified Fixes
         run: |
           python3 - << 'EOF'
           import os
           import re
 
-          # 1. JobEntity.kt fix
+          # 1. JobEntity.kt: Fix Room index column name
           p_job = "app/src/main/java/com/cn/upscaler/core/database/JobEntity.kt"
           if os.path.exists(p_job):
               with open(p_job, "r") as f:
@@ -43,7 +43,7 @@ jobs:
               with open(p_job, "w") as f:
                   f.write(c)
 
-          # 2. TensorPreprocessor.kt comments fix
+          # 2. TensorPreprocessor.kt: Fix brackets inside comments (lines 1-45)
           p_tensor = "app/src/main/java/com/cn/upscaler/core/ai/TensorPreprocessor.kt"
           if os.path.exists(p_tensor):
               with open(p_tensor, "r") as f:
@@ -54,40 +54,82 @@ jobs:
               with open(p_tensor, "w") as f:
                   f.write("\n".join(t_lines) + "\n")
 
-          # 3. Completely sanitize AboutPrivacyScreen.kt to remove broken quote strings
+          # 3. ImageProcessingPipeline.kt: Fix 'accumulatedWarnings +=' to '.add(...)'
+          p_pipe = "app/src/main/java/com/cn/upscaler/core/processing/ImageProcessingPipeline.kt"
+          if os.path.exists(p_pipe):
+              with open(p_pipe, "r") as f:
+                  c_pipe = f.read()
+              c_pipe = re.sub(
+                  r'accumulatedWarnings\s*\+=\s*([a-zA-Z0-9_\.\!\?]+)',
+                  r'accumulatedWarnings.add(\1)',
+                  c_pipe
+              )
+              with open(p_pipe, "w") as f:
+                  f.write(c_pipe)
+
+          # 4. AboutPrivacyScreen.kt: Join broken multi-line strings and escape inner quotes
           p_about = "app/src/main/java/com/cn/upscaler/feature/about/AboutPrivacyScreen.kt"
           if os.path.exists(p_about):
               with open(p_about, "r") as f:
-                  about_lines = f.readlines()
-              
-              clean_about = []
-              for idx, line in enumerate(about_lines):
-                  if 30 <= idx + 1 <= 60 and ('Text(' in line or 'text =' in line):
-                      clean_about.append('        Text("Privacy Policy & Information")\n')
+                  raw = f.read()
+              out_lines = []
+              in_broken_str = False
+              buffer = ""
+              for line in raw.splitlines():
+                  cleaned = re.sub(r'\$\{[^}]*\}', '', line)
+                  q_count = len(re.findall(r'(?<!\\)"', cleaned))
+                  if not in_broken_str:
+                      if q_count % 2 == 1 and '"""' not in line:
+                          in_broken_str = True
+                          buffer = line.rstrip() + " "
+                      else:
+                          out_lines.append(line)
                   else:
-                      clean_about.append(line)
+                      buffer += line.strip()
+                      cleaned_buf = re.sub(r'\$\{[^}]*\}', '', buffer)
+                      if len(re.findall(r'(?<!\\)"', cleaned_buf)) % 2 == 0:
+                          in_broken_str = False
+                          out_lines.append(buffer)
+                          buffer = ""
+                      else:
+                          buffer += " "
+              if buffer:
+                  out_lines.append(buffer)
+
+              for idx, line in enumerate(out_lines):
+                  if '${' not in line and line.count('"') > 2:
+                      first = line.find('"')
+                      last = line.rfind('"')
+                      if first != -1 and last > first:
+                          between = line[first+1:last]
+                          if not re.search(r'"\s*,\s*"', between):
+                              inner = between.replace('\\"', '"').replace('"', '\\"')
+                              out_lines[idx] = line[:first+1] + inner + line[last:]
               with open(p_about, "w") as f:
-                  f.writelines(clean_about)
+                  f.write("\n".join(out_lines) + "\n")
 
-          # 4. Fix HomeScreen.kt line 261
-          p_home = "app/src/main/java/com/cn/upscaler/feature/home/HomeScreen.kt"
-          if os.path.exists(p_home):
-              with open(p_home, "r") as f:
-                  home_lines = f.readlines()
-              if len(home_lines) >= 261:
-                  home_lines[260] = home_lines[260].replace('"Add Images"', '"Add Images",')
-              with open(p_home, "w") as f:
-                  f.writelines(home_lines)
-
-          # 5. Fix ImageSelectionScreen.kt line 110
-          p_sel = "app/src/main/java/com/cn/upscaler/feature/selection/ImageSelectionScreen.kt"
-          if os.path.exists(p_sel):
-              with open(p_sel, "r") as f:
-                  sel_lines = f.readlines()
-              if len(sel_lines) >= 110:
-                  sel_lines[109] = sel_lines[109].replace('""', '", "')
-              with open(p_sel, "w") as f:
-                  f.writelines(sel_lines)
+          # 5. ModelSpecification.kt, HomeScreen.kt, ImageSelectionScreen.kt: Escape unescaped inner quotes on single lines
+          for fp in [
+              "app/src/main/java/com/cn/upscaler/core/ai/ModelSpecification.kt",
+              "app/src/main/java/com/cn/upscaler/feature/home/HomeScreen.kt",
+              "app/src/main/java/com/cn/upscaler/feature/selection/ImageSelectionScreen.kt"
+          ]:
+              if os.path.exists(fp):
+                  with open(fp, "r") as f:
+                      lines = f.read().splitlines()
+                  for idx, line in enumerate(lines):
+                      if '${' in line or ' else ' in line or 'if (' in line:
+                          continue
+                      if line.count('"') > 2:
+                          first = line.find('"')
+                          last = line.rfind('"')
+                          if first != -1 and last > first:
+                              between = line[first+1:last]
+                              if not re.search(r'"\s*,\s*"', between):
+                                  inner = between.replace('\\"', '"').replace('"', '\\"')
+                                  lines[idx] = line[:first+1] + inner + line[last:]
+                  with open(fp, "w") as f:
+                      f.write("\n".join(lines) + "\n")
           EOF
 
       - name: Setup Gradle
