@@ -28,12 +28,12 @@ jobs:
             unzip -o CN_Upscaler_Android_Studio_Project.zip -d ./
           fi
 
-      - name: Exact Targeted Fixes
+      - name: Fix AboutPrivacyScreen Quotes & Syntax
         run: |
           python3 - << 'EOF'
           import re
 
-          # 1. JobEntity.kt: Fix Room index column name
+          # 1. JobEntity.kt fix
           p_job = "app/src/main/java/com/cn/upscaler/core/database/JobEntity.kt"
           with open(p_job, "r") as f:
               c = f.read()
@@ -41,7 +41,7 @@ jobs:
           with open(p_job, "w") as f:
               f.write(c)
 
-          # 2. TensorPreprocessor.kt: Replace '[' and ']' only inside comments (lines 1-45)
+          # 2. TensorPreprocessor.kt comments fix
           p_tensor = "app/src/main/java/com/cn/upscaler/core/ai/TensorPreprocessor.kt"
           with open(p_tensor, "r") as f:
               t_lines = f.read().splitlines()
@@ -51,26 +51,46 @@ jobs:
           with open(p_tensor, "w") as f:
               f.write("\n".join(t_lines) + "\n")
 
-          # 3. ImageProcessingPipeline.kt: Fix 'accumulatedWarnings +=' to '.add(...)'
+          # 3. ImageProcessingPipeline.kt fix
           p_pipe = "app/src/main/java/com/cn/upscaler/core/processing/ImageProcessingPipeline.kt"
           with open(p_pipe, "r") as f:
               c_pipe = f.read()
           c_pipe = re.sub(
               r'accumulatedWarnings\s*\+=\s*([a-zA-Z0-9_\.\!\?]+)',
-              r'accumulatedWarnings.add(\1!!)',
+              r'accumulatedWarnings.add(\1)',
               c_pipe
           )
-          # Just in case fallbackReason wasn't null-asserted or already non-null:
-          c_pipe = c_pipe.replace("fallbackReason!!", "fallbackReason")
           with open(p_pipe, "w") as f:
               f.write(c_pipe)
 
-          # 4. Safe unescaped-quote fixer that NEVER touches lines with 'if (' or 'else' or '${'
+          # 4. Clean fix for AboutPrivacyScreen.kt lines 35-55 (replace raw broken multi-line strings with escaped single-line or valid string)
+          p_about = "app/src/main/java/com/cn/upscaler/feature/about/AboutPrivacyScreen.kt"
+          with open(p_about, "r") as f:
+              about_content = f.read()
+          
+          # Fix common unescaped quotes or broken strings specifically in AboutPrivacyScreen
+          # Replace any inner unclosed quotes inside Text components cleanly
+          lines = about_content.splitlines()
+          for idx, line in enumerate(lines):
+              if 35 <= idx + 1 <= 55:
+                  # If the line contains unescaped quotes inside parameters, escape them properly
+                  if 'Text(' in line or 'text =' in line:
+                      # Keep the outer quotes, escape inner ones
+                      parts = line.split('"')
+                      if len(parts) >= 5:
+                          # e.g., Text("Something "quoted" here") -> Text("Something \"quoted\" here")
+                          outer_start = parts[0] + '"'
+                          inner = '\\"'.join(parts[1:-1])
+                          outer_end = '"' + parts[-1]
+                          lines[idx] = outer_start + inner + outer_end
+          with open(p_about, "w") as f:
+              f.write("\n".join(lines) + "\n")
+
+          # 5. General safe quote fixer for other safe files
           def safe_fix_quotes(filepath):
               with open(filepath, "r") as f:
                   lines = f.read().splitlines()
               for idx, line in enumerate(lines):
-                  # Skip lines with multiple separate strings (like if/else, commas between strings, or interpolation)
                   if '${' in line or ' else ' in line or 'if (' in line:
                       continue
                   if line.count('"') > 2:
@@ -86,7 +106,6 @@ jobs:
 
           for fp in [
               "app/src/main/java/com/cn/upscaler/core/ai/ModelSpecification.kt",
-              "app/src/main/java/com/cn/upscaler/feature/about/AboutPrivacyScreen.kt",
               "app/src/main/java/com/cn/upscaler/feature/home/HomeScreen.kt",
               "app/src/main/java/com/cn/upscaler/feature/selection/ImageSelectionScreen.kt"
           ]:
