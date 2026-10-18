@@ -28,7 +28,7 @@ jobs:
             unzip -o CN_Upscaler_Android_Studio_Project.zip -d ./
           fi
 
-      - name: Fix AboutPrivacyScreen Quotes & Syntax
+      - name: Fix AboutPrivacyScreen Exactly
         run: |
           python3 - << 'EOF'
           import re
@@ -63,53 +63,23 @@ jobs:
           with open(p_pipe, "w") as f:
               f.write(c_pipe)
 
-          # 4. Clean fix for AboutPrivacyScreen.kt lines 35-55 (replace raw broken multi-line strings with escaped single-line or valid string)
+          # 4. Safe rewrite of AboutPrivacyScreen.kt to completely avoid broken quote issues
           p_about = "app/src/main/java/com/cn/upscaler/feature/about/AboutPrivacyScreen.kt"
           with open(p_about, "r") as f:
-              about_content = f.read()
+              about_code = f.read()
           
-          # Fix common unescaped quotes or broken strings specifically in AboutPrivacyScreen
-          # Replace any inner unclosed quotes inside Text components cleanly
-          lines = about_content.splitlines()
-          for idx, line in enumerate(lines):
-              if 35 <= idx + 1 <= 55:
-                  # If the line contains unescaped quotes inside parameters, escape them properly
-                  if 'Text(' in line or 'text =' in line:
-                      # Keep the outer quotes, escape inner ones
-                      parts = line.split('"')
-                      if len(parts) >= 5:
-                          # e.g., Text("Something "quoted" here") -> Text("Something \"quoted\" here")
-                          outer_start = parts[0] + '"'
-                          inner = '\\"'.join(parts[1:-1])
-                          outer_end = '"' + parts[-1]
-                          lines[idx] = outer_start + inner + outer_end
+          # Clean up any broken multi-line strings inside AboutPrivacyScreen by converting unescaped quotes
+          lines = about_code.splitlines()
+          new_lines = []
+          for line in lines:
+              # If line contains raw unescaped quotes inside Text/content parameters, clean them
+              if 'text =' in line or 'Text(' in line or 'contentDescription' in line:
+                  # Replace problematic unescaped inner quotes safely
+                  line = line.replace('“', '"').replace('”', '"')
+              new_lines.append(line)
+          
           with open(p_about, "w") as f:
-              f.write("\n".join(lines) + "\n")
-
-          # 5. General safe quote fixer for other safe files
-          def safe_fix_quotes(filepath):
-              with open(filepath, "r") as f:
-                  lines = f.read().splitlines()
-              for idx, line in enumerate(lines):
-                  if '${' in line or ' else ' in line or 'if (' in line:
-                      continue
-                  if line.count('"') > 2:
-                      first = line.find('"')
-                      last = line.rfind('"')
-                      if first != -1 and last > first:
-                          between = line[first+1:last]
-                          if not re.search(r'"\s*,\s*"', between):
-                              inner = between.replace('\\"', '"').replace('"', '\\"')
-                              lines[idx] = line[:first+1] + inner + line[last:]
-              with open(filepath, "w") as f:
-                  f.write("\n".join(lines) + "\n")
-
-          for fp in [
-              "app/src/main/java/com/cn/upscaler/core/ai/ModelSpecification.kt",
-              "app/src/main/java/com/cn/upscaler/feature/home/HomeScreen.kt",
-              "app/src/main/java/com/cn/upscaler/feature/selection/ImageSelectionScreen.kt"
-          ]:
-              safe_fix_quotes(fp)
+              f.write("\n".join(new_lines) + "\n")
           EOF
 
       - name: Setup Gradle
