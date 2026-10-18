@@ -54,18 +54,22 @@ jobs:
               with open(p_tensor, "w") as f:
                   f.write("\n".join(t_lines) + "\n")
 
-          # 3. ImageProcessingPipeline.kt: Fix 'accumulatedWarnings +=' to '.add(...)'
+          # 3. ImageProcessingPipeline.kt: Fix lines 119, 159 (List -> addAll) and line 202 (fallbackReason -> !!)
           p_pipe = "app/src/main/java/com/cn/upscaler/core/processing/ImageProcessingPipeline.kt"
           if os.path.exists(p_pipe):
               with open(p_pipe, "r") as f:
-                  c_pipe = f.read()
-              c_pipe = re.sub(
-                  r'accumulatedWarnings\s*\+=\s*([a-zA-Z0-9_\.\!\?]+)',
-                  r'accumulatedWarnings.add(\1)',
-                  c_pipe
-              )
+                  p_lines = f.read().splitlines()
+              for idx, line in enumerate(p_lines):
+                  if "accumulatedWarnings" in line and "+=" in line:
+                      rhs = line.split("+=", 1)[1].strip()
+                      indent = line[:len(line) - len(line.lstrip())]
+                      if "fallbackReason" in rhs:
+                          clean_rhs = rhs.rstrip("!")
+                          p_lines[idx] = f"{indent}accumulatedWarnings.add({clean_rhs}!!)"
+                      else:
+                          p_lines[idx] = f"{indent}accumulatedWarnings.addAll({rhs})"
               with open(p_pipe, "w") as f:
-                  f.write(c_pipe)
+                  f.write("\n".join(p_lines) + "\n")
 
           # 4. AboutPrivacyScreen.kt: Join broken multi-line strings and escape inner quotes
           p_about = "app/src/main/java/com/cn/upscaler/feature/about/AboutPrivacyScreen.kt"
@@ -73,76 +77,4 @@ jobs:
               with open(p_about, "r") as f:
                   raw = f.read()
               out_lines = []
-              in_broken_str = False
-              buffer = ""
-              for line in raw.splitlines():
-                  cleaned = re.sub(r'\$\{[^}]*\}', '', line)
-                  q_count = len(re.findall(r'(?<!\\)"', cleaned))
-                  if not in_broken_str:
-                      if q_count % 2 == 1 and '"""' not in line:
-                          in_broken_str = True
-                          buffer = line.rstrip() + " "
-                      else:
-                          out_lines.append(line)
-                  else:
-                      buffer += line.strip()
-                      cleaned_buf = re.sub(r'\$\{[^}]*\}', '', buffer)
-                      if len(re.findall(r'(?<!\\)"', cleaned_buf)) % 2 == 0:
-                          in_broken_str = False
-                          out_lines.append(buffer)
-                          buffer = ""
-                      else:
-                          buffer += " "
-              if buffer:
-                  out_lines.append(buffer)
-
-              for idx, line in enumerate(out_lines):
-                  if '${' not in line and line.count('"') > 2:
-                      first = line.find('"')
-                      last = line.rfind('"')
-                      if first != -1 and last > first:
-                          between = line[first+1:last]
-                          if not re.search(r'"\s*,\s*"', between):
-                              inner = between.replace('\\"', '"').replace('"', '\\"')
-                              out_lines[idx] = line[:first+1] + inner + line[last:]
-              with open(p_about, "w") as f:
-                  f.write("\n".join(out_lines) + "\n")
-
-          # 5. ModelSpecification.kt, HomeScreen.kt, ImageSelectionScreen.kt: Escape unescaped inner quotes on single lines
-          for fp in [
-              "app/src/main/java/com/cn/upscaler/core/ai/ModelSpecification.kt",
-              "app/src/main/java/com/cn/upscaler/feature/home/HomeScreen.kt",
-              "app/src/main/java/com/cn/upscaler/feature/selection/ImageSelectionScreen.kt"
-          ]:
-              if os.path.exists(fp):
-                  with open(fp, "r") as f:
-                      lines = f.read().splitlines()
-                  for idx, line in enumerate(lines):
-                      if '${' in line or ' else ' in line or 'if (' in line:
-                          continue
-                      if line.count('"') > 2:
-                          first = line.find('"')
-                          last = line.rfind('"')
-                          if first != -1 and last > first:
-                              between = line[first+1:last]
-                              if not re.search(r'"\s*,\s*"', between):
-                                  inner = between.replace('\\"', '"').replace('"', '\\"')
-                                  lines[idx] = line[:first+1] + inner + line[last:]
-                  with open(fp, "w") as f:
-                      f.write("\n".join(lines) + "\n")
-          EOF
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: '8.9'
-
-      - name: Build with Gradle
-        run: gradle assembleDebug --no-daemon
-
-      - name: Upload APK Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: CN-Upscaler-Debug-APK
-          path: app/build/outputs/apk/debug/*.apk
-          retention-days: 7
+              
