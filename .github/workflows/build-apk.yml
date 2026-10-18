@@ -1,80 +1,64 @@
-name: Build Android APK
+name: Build & Release CN Upscaler APK
 
 on:
   push:
-    branches:
-      - main
-      - master
+    branches: [ "main", "master" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  build:
-    name: Build Debug APK
+  build-apk:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Extract ZIP & Normalize Project Directory
+        run: |
+          if [ -f "CN_Upscaler_Android_Studio_Project.zip" ] && [ ! -f "settings.gradle.kts" ]; then
+            unzip -q -o CN_Upscaler_Android_Studio_Project.zip
+          fi
+          if [ -d "CN_Upscaler" ] && [ -f "CN_Upscaler/settings.gradle.kts" ] && [ ! -f "settings.gradle.kts" ]; then
+            shopt -s dotglob
+            mv CN_Upscaler/* .
+            rmdir CN_Upscaler || true
+          fi
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
           java-version: '17'
+          distribution: 'temurin'
 
-      - name: Unzip Project Files
+      - name: Setup Android SDK (API 35)
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Gradle 8.10.2
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Run Automated Unit Tests
+        run: gradle testDebugUnitTest --stacktrace
+
+      - name: Build Debug APK & Release AAB
         run: |
-          if [ -f "CN_Upscaler_Android_Studio_Project.zip" ]; then
-            unzip -o CN_Upscaler_Android_Studio_Project.zip -d ./
-          fi
+          gradle assembleDebug bundleRelease --stacktrace
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/CN-Upscaler-v1.0.0-debug.apk
+          cp app/build/outputs/bundle/release/app-release.aab dist/CN-Upscaler-v1.0.0-release.aab
 
-      - name: Apply Verified Fixes
-        run: |
-          python3 - << 'EOF'
-          import os
-          import re
+      - name: Upload Ready-to-Install Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CN-Upscaler-debug-apk
+          path: dist/CN-Upscaler-v1.0.0-debug.apk
 
-          # 1. JobEntity.kt: Fix Room index column name
-          p_job = "app/src/main/java/com/cn/upscaler/core/database/JobEntity.kt"
-          if os.path.exists(p_job):
-              with open(p_job, "r") as f:
-                  c = f.read()
-              c = c.replace('Index(value = ["status"])', 'Index(value = ["statusName"])')
-              with open(p_job, "w") as f:
-                  f.write(c)
-
-          # 2. TensorPreprocessor.kt: Fix brackets inside comments (lines 1-45)
-          p_tensor = "app/src/main/java/com/cn/upscaler/core/ai/TensorPreprocessor.kt"
-          if os.path.exists(p_tensor):
-              with open(p_tensor, "r") as f:
-                  t_lines = f.read().splitlines()
-              for idx in range(min(45, len(t_lines))):
-                  if t_lines[idx].strip().startswith("*") or t_lines[idx].strip().startswith("//"):
-                      t_lines[idx] = t_lines[idx].replace("[", "(").replace("]", ")")
-              with open(p_tensor, "w") as f:
-                  f.write("\n".join(t_lines) + "\n")
-
-          # 3. ImageProcessingPipeline.kt: Fix lines 119, 159 (List -> addAll) and line 202 (fallbackReason -> !!)
-          p_pipe = "app/src/main/java/com/cn/upscaler/core/processing/ImageProcessingPipeline.kt"
-          if os.path.exists(p_pipe):
-              with open(p_pipe, "r") as f:
-                  p_lines = f.read().splitlines()
-              for idx, line in enumerate(p_lines):
-                  if "accumulatedWarnings" in line and "+=" in line:
-                      rhs = line.split("+=", 1)[1].strip()
-                      indent = line[:len(line) - len(line.lstrip())]
-                      if "fallbackReason" in rhs:
-                          clean_rhs = rhs.rstrip("!")
-                          p_lines[idx] = f"{indent}accumulatedWarnings.add({clean_rhs}!!)"
-                      else:
-                          p_lines[idx] = f"{indent}accumulatedWarnings.addAll({rhs})"
-              with open(p_pipe, "w") as f:
-                  f.write("\n".join(p_lines) + "\n")
-
-          # 4. AboutPrivacyScreen.kt: Join broken multi-line strings and escape inner quotes
-          p_about = "app/src/main/java/com/cn/upscaler/feature/about/AboutPrivacyScreen.kt"
-          if os.path.exists(p_about):
-              with open(p_about, "r") as f:
-                  raw = f.read()
-              out_lines = []
-              
+      - name: Upload Release Android App Bundle (AAB)
+        uses: actions/upload-artifact@v4
+        with:
+          name: CN-Upscaler-release-aab
+          path: dist/CN-Upscaler-v1.0.0-release.aab
