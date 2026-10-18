@@ -41,28 +41,52 @@ jobs:
           with open(p_job, "w") as f:
               f.write(c)
 
-          # 2. Completely rewrite TensorPreprocessor.kt with clean syntax
+          # 2. Fix TensorPreprocessor.kt line 26 and any bracket/syntax issues
           p_tensor = "app/src/main/java/com/cn/upscaler/core/ai/TensorPreprocessor.kt"
           with open(p_tensor, "r") as f:
               t_raw = f.read()
-          print("=== Original TensorPreprocessor.kt ===")
-          print(t_raw)
 
-          t_lines = []
-          for line in t_raw.splitlines():
-              # Fix unclosed '[' on any line (like line 26)
-              code_part = line.split("//")[0]
-              if code_part.count("[") > code_part.count("]"):
-                  # Replace missing closing bracket before ')' or at end
-                  if ")" in code_part and code_part.rfind("[") < code_part.rfind(")"):
-                      idx = line.rfind(")")
-                      line = line[:idx] + "]" + line[idx:]
+          t_lines = t_raw.splitlines()
+          fixed_t_lines = []
+          in_kdoc = False
+          for idx, line in enumerate(t_lines):
+              s = line.strip()
+              if s.startswith("/**"):
+                  in_kdoc = True
+              if in_kdoc:
+                  # Strip '[' and ']' inside KDoc comments so KSP/Kotlin parser never throws Closing bracket expected
+                  if not s.startswith("/**") and not s.endswith("*/"):
+                      line = line.replace("[", "(").replace("]", ")")
                   else:
-                      line = code_part.rstrip() + "]"
-              t_lines.append(line)
+                      line = re.sub(r'\[([^\]]*)\)', r'(\1)', line)
+              if s.endswith("*/"):
+                  in_kdoc = False
+
+              # Also check actual code lines around line 26 (or anywhere in file)
+              if not s.startswith("//") and not s.startswith("*"):
+                  # Fix 2D indexing like array[a, b] -> array[a][b]
+                  line = re.sub(r'\[([^,\[\]]+),\s*([^,\[\]]+)\]', r'[\1][\2]', line)
+                  # Fix mismatched [ ... ) in code e.g. FloatArray[size) or array[idx)
+                  line = re.sub(r'\[([^\[\]\(\)]+)\)', r'[\1]', line)
+                  # If a line has '[' opened inside an expression that wasn't closed before newline
+                  code_only = line.split("//")[0]
+                  if code_only.count("[") > code_only.count("]"):
+                      line = code_only.rstrip() + "]"
+                  elif code_only.count("[") == code_only.count("]") and "[" in code_only:
+                      # Check if '[' appears after ']' or if '(' inside '[' is unclosed e.g. arr[(x + y] -> arr[(x + y)]
+                      def fix_inner_parens(m):
+                          inner = m.group(1)
+                          while inner.count("(") > inner.count(")"):
+                              inner += ")"
+                          while inner.count(")") > inner.count("("):
+                              inner = "(" + inner
+                          return "[" + inner + "]"
+                      line = re.sub(r'\[([^\[\]]+)\]', fix_inner_parens, line)
+
+              fixed_t_lines.append(line)
 
           with open(p_tensor, "w") as f:
-              f.write("\n".join(t_lines) + "\n")
+              f.write("\n".join(fixed_t_lines) + "\n")
 
           # 3. Fix broken multi-line strings in UI files
           def fix_broken_strings(filepath):
@@ -119,7 +143,14 @@ jobs:
           gradle-version: '8.9'
 
       - name: Build with Gradle
-        run: gradle assembleDebug --no-daemon
+        run: |
+          if ! gradle assembleDebug --no-daemon; then
+            echo "=========================================="
+            echo "EXACT LINES OF TensorPreprocessor.kt:"
+            nl -ba app/src/main/java/com/cn/upscaler/core/ai/TensorPreprocessor.kt
+            echo "=========================================="
+            exit 1
+          fi
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
