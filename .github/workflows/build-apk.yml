@@ -18,14 +18,20 @@ jobs:
 
       - name: Extract ZIP & Normalize Project Directory
         run: |
-          ZIP_FILE=$(find . -maxdepth 2 -name "*.zip" | head -n 1)
+          ZIP_FILE=$(find . -name "*.zip" | head -n 1)
           if [ -n "$ZIP_FILE" ] && [ ! -f "settings.gradle.kts" ]; then
+            echo "Found project archive: $ZIP_FILE"
             unzip -q -o "$ZIP_FILE"
           fi
-          if [ -d "CN_Upscaler" ] && [ -f "CN_Upscaler/settings.gradle.kts" ] && [ ! -f "settings.gradle.kts" ]; then
+          SETTINGS_FILE=$(find . -maxdepth 3 -name "settings.gradle.kts" | head -n 1)
+          if [ -n "$SETTINGS_FILE" ] && [ "$SETTINGS_FILE" != "./settings.gradle.kts" ]; then
+            PROJ_DIR=$(dirname "$SETTINGS_FILE")
             shopt -s dotglob
-            mv CN_Upscaler/* .
-            rmdir CN_Upscaler || true
+            cp -rn "$PROJ_DIR"/* . || true
+          fi
+          if [ ! -f "settings.gradle.kts" ]; then
+            echo "::error::CN_Upscaler_Android_Studio_Project.zip ফাইলটি আপনার GitHub রিপোজিটরিতে পাওয়া যায়নি! রিপোজিটরির Code ট্যাবে গিয়ে Add file -> Upload files থেকে CN_Upscaler_Android_Studio_Project.zip আপলোড করে Commit changes দিন।"
+            exit 1
           fi
 
       - name: Set up JDK 17
@@ -46,11 +52,11 @@ jobs:
           gradle-version: '8.10.2'
 
       - name: Run Automated Unit Tests
-        run: gradle testDebugUnitTest --stacktrace
+        run: gradle testDebugUnitTest --console=plain
 
       - name: Build Debug APK
         run: |
-          gradle assembleDebug --stacktrace
+          gradle assembleDebug --console=plain
           mkdir -p dist
           cp app/build/outputs/apk/debug/app-debug.apk dist/CN-Upscaler-v1.0.0-debug.apk
 
@@ -63,7 +69,7 @@ jobs:
       - name: Build & Upload Release AAB
         continue-on-error: true
         run: |
-          gradle bundleRelease --stacktrace
+          gradle bundleRelease --console=plain
           cp app/build/outputs/bundle/release/app-release.aab dist/CN-Upscaler-v1.0.0-release.aab
 
       - name: Upload Release Android App Bundle (AAB)
