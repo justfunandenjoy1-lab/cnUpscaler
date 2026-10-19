@@ -29,10 +29,39 @@ jobs:
             shopt -s dotglob
             cp -rn "$PROJ_DIR"/* . || true
           fi
-          if [ ! -f "settings.gradle.kts" ]; then
-            echo "::error::CN_Upscaler_Android_Studio_Project.zip ফাইলটি আপনার GitHub রিপোজিটরিতে পাওয়া যায়নি! রিপোজিটরির Code ট্যাবে গিয়ে Add file -> Upload files থেকে CN_Upscaler_Android_Studio_Project.zip আপলোড করে Commit changes দিন।"
-            exit 1
-          fi
+          python3 - << 'PYEOF'
+          import os
+          fixes = [
+              ("app/src/main/java/com/cn/upscaler/core/ai/ModelSpecification.kt",
+               'licenseName = "BSD 3-Clause "New" or "Revised" License",',
+               'licenseName = "BSD 3-Clause \'New\' or \'Revised\' License",'),
+              ("app/src/main/java/com/cn/upscaler/feature/about/AboutPrivacyScreen.kt",
+               'Your photos never leave your device.\n" +',
+               'Your photos never leave your device.\\n" +'),
+              ("app/src/main/java/com/cn/upscaler/feature/about/AboutPrivacyScreen.kt",
+               'without requesting broad all-files access.\n" +',
+               'without requesting broad all-files access.\\n" +'),
+              ("app/src/main/java/com/cn/upscaler/feature/about/AboutPrivacyScreen.kt",
+               'preserves your original aspect ratio without stretching.\n" +',
+               'preserves your original aspect ratio without stretching.\\n" +'),
+              ("app/src/main/java/com/cn/upscaler/feature/home/HomeScreen.kt",
+               'Tap "Add Images" above',
+               "Tap 'Add Images' above"),
+              ("app/src/main/java/com/cn/upscaler/feature/selection/ImageSelectionScreen.kt",
+               'Tap "Add Single" or "Add Batch"',
+               "Tap 'Add Single' or 'Add Batch'"),
+              ("app/src/main/java/com/cn/upscaler/core/database/JobEntity.kt",
+               'Index(value = ["status"])',
+               'Index(value = ["statusName"])'),
+          ]
+          for path, old, new in fixes:
+              if os.path.exists(path):
+                  with open(path, "r", encoding="utf-8") as f:
+                      content = f.read()
+                  if old in content:
+                      with open(path, "w", encoding="utf-8") as f:
+                          f.write(content.replace(old, new))
+          PYEOF
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
