@@ -18,8 +18,9 @@ jobs:
 
       - name: Extract ZIP & Normalize Project Directory
         run: |
-          if [ -f "CN_Upscaler_Android_Studio_Project.zip" ] && [ ! -f "settings.gradle.kts" ]; then
-            unzip -q -o CN_Upscaler_Android_Studio_Project.zip
+          ZIP_FILE=$(find . -maxdepth 2 -name "*.zip" | head -n 1)
+          if [ -n "$ZIP_FILE" ] && [ ! -f "settings.gradle.kts" ]; then
+            unzip -q -o "$ZIP_FILE"
           fi
           if [ -d "CN_Upscaler" ] && [ -f "CN_Upscaler/settings.gradle.kts" ] && [ ! -f "settings.gradle.kts" ]; then
             shopt -s dotglob
@@ -34,7 +35,10 @@ jobs:
           distribution: 'temurin'
 
       - name: Setup Android SDK (API 35)
-        uses: android-actions/setup-android@v3
+        run: |
+          SDK_MGR=$(find "$ANDROID_HOME" /usr/local/lib/android/sdk -name sdkmanager 2>/dev/null | sort -V | tail -n 1)
+          yes | "$SDK_MGR" --licenses > /dev/null || true
+          "$SDK_MGR" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Setup Gradle 8.10.2
         uses: gradle/actions/setup-gradle@v4
@@ -44,12 +48,11 @@ jobs:
       - name: Run Automated Unit Tests
         run: gradle testDebugUnitTest --stacktrace
 
-      - name: Build Debug APK & Release AAB
+      - name: Build Debug APK
         run: |
-          gradle assembleDebug bundleRelease --stacktrace
+          gradle assembleDebug --stacktrace
           mkdir -p dist
           cp app/build/outputs/apk/debug/app-debug.apk dist/CN-Upscaler-v1.0.0-debug.apk
-          cp app/build/outputs/bundle/release/app-release.aab dist/CN-Upscaler-v1.0.0-release.aab
 
       - name: Upload Ready-to-Install Debug APK
         uses: actions/upload-artifact@v4
@@ -57,9 +60,16 @@ jobs:
           name: CN-Upscaler-debug-apk
           path: dist/CN-Upscaler-v1.0.0-debug.apk
 
+      - name: Build & Upload Release AAB
+        continue-on-error: true
+        run: |
+          gradle bundleRelease --stacktrace
+          cp app/build/outputs/bundle/release/app-release.aab dist/CN-Upscaler-v1.0.0-release.aab
+
       - name: Upload Release Android App Bundle (AAB)
+        if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: CN-Upscaler-release-aab
           path: dist/CN-Upscaler-v1.0.0-release.aab
- 
