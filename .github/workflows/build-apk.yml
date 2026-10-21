@@ -30,7 +30,7 @@ jobs:
             cp -rn "$PROJ_DIR"/* . || true
           fi
           python3 - << 'PYEOF'
-          import os
+          import glob, os
           fixes = [
               ("app/src/main/java/com/cn/upscaler/core/ai/ModelSpecification.kt",
                'licenseName = "BSD 3-Clause "New" or "Revised" License",',
@@ -61,6 +61,12 @@ jobs:
                   if old in content:
                       with open(path, "w", encoding="utf-8") as f:
                           f.write(content.replace(old, new))
+          for kt_path in glob.glob("app/**/*.kt", recursive=True):
+              with open(kt_path, "r", encoding="utf-8") as f:
+                  c = f.read()
+              if "/**" in c:
+                  with open(kt_path, "w", encoding="utf-8") as f:
+                      f.write(c.replace("/**", "/*"))
           PYEOF
 
       - name: Set up JDK 17
