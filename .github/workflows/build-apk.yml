@@ -56,6 +56,18 @@ jobs:
               ("app/src/main/java/com/cn/upscaler/core/processing/ImageProcessingPipeline.kt",
                'accumulatedWarnings += session.activeProviderReport.fallbackReason',
                'session.activeProviderReport.fallbackReason?.let { accumulatedWarnings.add(it) }'),
+              ("app/src/main/java/com/cn/upscaler/core/image/ImageInspector.kt",
+               'BitmapFactory.decodeStream(stream, null, options)\n            } ?: return ImageValidationResult.Invalid(',
+               'BitmapFactory.decodeStream(stream, null, options)\n                true\n            } ?: return ImageValidationResult.Invalid('),
+              ("app/src/main/java/com/cn/upscaler/core/image/SafeBitmapDecoder.kt",
+               'BitmapFactory.decodeStream(it, null, boundsOptions)\n            } ?: return AppResult.Error("Cannot open URI for thumbnail", errorCode = ErrorCode.FILE_NOT_FOUND)',
+               'BitmapFactory.decodeStream(it, null, boundsOptions)\n                true\n            } ?: return AppResult.Error("Cannot open URI for thumbnail", errorCode = ErrorCode.FILE_NOT_FOUND)'),
+              ("app/src/main/java/com/cn/upscaler/core/ai/HardwareAcceleratorManager.kt",
+               'entries.find { it.id == id } ?: AUTO',
+               'entries.find { it.id == id } ?: CPU_ONLY'),
+              ("app/src/main/java/com/cn/upscaler/domain/model/BatchModels.kt",
+               'val executionProvider: ExecutionProviderPreference = ExecutionProviderPreference.AUTO,',
+               'val executionProvider: ExecutionProviderPreference = ExecutionProviderPreference.CPU_ONLY,'),
           ]
           for path, old, new in fixes:
               if os.path.exists(path):
