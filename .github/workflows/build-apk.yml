@@ -18,8 +18,10 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Setup Gradle 8.10.2
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
 
       - name: Restore Complete CN Upscaler v61 Source Tree
         shell: bash
@@ -1021,15 +1023,18 @@ jobs:
           NmRH1MhSaSdipvPReRtXefPDGTQrj0jyBL54QpJDhF5kRL0yUytGpxC/EUJ7oAAAK/UYFdeXxi0A
           AYu6A4DQGcL5hvuxxGf7AgAAAAAEWVo=
           B64_EOF
-          chmod +x gradlew
           mkdir -p app/src/main/assets/models
           echo "CN_UPSCALER_V61_ANISOTROPIC_UHD" > app/src/main/assets/models/realesrgan_x4plus_x4.ort
           echo "CN_UPSCALER_V61_ANISOTROPIC_UHD" > app/src/main/assets/models/realesr_general_x4v3_x4.ort
 
-      - name: Build Debug & Release APKs
+      - name: Build Debug APK
         shell: bash
         run: |
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          set -euo pipefail
+          if [ -n "${ANDROID_HOME:-}" ] && [ -x "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" ]; then
+            yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          fi
+          gradle assembleDebug --no-daemon --stacktrace
 
       - name: Upload CN Upscaler v61 APK
         uses: actions/upload-artifact@v4
