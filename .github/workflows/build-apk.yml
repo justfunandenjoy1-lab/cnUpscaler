@@ -21,7 +21,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
 
       - name: Extract Self-Contained CN Upscaler v72 Project
         run: |
@@ -1054,7 +1053,7 @@ jobs:
 
       - name: Download Pre-Trained Real-ESRGAN Weights & Export Authentic 34-Layer ONNX Models
         run: |
-          pip install --extra-index-url https://download.pytorch.org/whl/cpu torch torchvision onnx
+          pip install --extra-index-url https://download.pytorch.org/whl/cpu torch onnx onnxscript
           mkdir -p /tmp/weights
           curl -L --retry 5 --fail -o /tmp/weights/realesr-general-x4v3.pth https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth
           curl -L --retry 5 --fail -o /tmp/weights/realesr-general-wdn-x4v3.pth https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-wdn-x4v3.pth
