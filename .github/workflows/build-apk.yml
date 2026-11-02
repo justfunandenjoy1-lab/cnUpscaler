@@ -27,7 +27,7 @@ jobs:
           rm -rf project_build
           mkdir -p project_build
           cat << 'B64_EOF' | tr -d '\n\r ' | base64 -d | tar -xJ -C project_build
-          /Td6WFoAAATm1rRGAgAhARwAAAAQz1jM5y//55hdABcL3ASAUDIm7h19G/PyyzPs7Pg38OrWet04
+          /Td6WFoAAATm1rRGAgAhARwAAAAQz1jM5yih7/5dABcL3ASAUDIm7h19G/PyyzPs7Pg38OrWet04
           dhtWH3Vustl6lPJpZ0H2EkjpO96jLtkR94wkbpcbQqvHv3gDvuIRAUsaObXYSqyz1kGqsO4VivmE
           kco4TQRAtP4L26a0Jav+pw2Mw7Udy+wzlA2olcgsZTGtv9x6DmJ8PAgsz5gNsj/SywKiwVODAaPF
           CULmV23XiyCZ5KYs7zhPGZzVMZk9OLu7807HxbBM9M3ITxR6j6QvfJFXQJMLA5PD2Vsu8h5BV+Eq
@@ -1067,8 +1067,55 @@ jobs:
           i0iY0pcx3FPcigDMuboZRM2GMlYAfzhKKCrv/t6w2EfnxDxoznoaZqc6J/LzLd32cB+bDEolkRG3
           cTVCKeFoWdBErcYuojhMKE2Sp0/Hvt5SLx+rMLjpvSFva8DbC7B8BzGIAlMGyf+ECvMJt+m8oq7I
           QEeh80l33nrpcdeFGH+b8Pf7s0URcFXTdjA5HBTOU9hLGGRXm4IGNbkhGKHnYp7KGZkN+Rzr2b45
-          3I4Oaq3+W12vehQndoYtZ+kd7n5n8f6gGTP9dMlVV3tAaTT302jgAF167eC3gF4KAAG0zwOA4Bx5
-          4bSQscRn+wIAAAAABFla
+          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
           B64_EOF
           ls -lh project_build/app/cn_upscaler.keystore
 
