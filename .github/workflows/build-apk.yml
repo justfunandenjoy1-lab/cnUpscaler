@@ -1001,17 +1001,34 @@ jobs:
           set -euo pipefail
           mkdir -p app/src/main/assets/models
           echo "Downloading 4x-ClearRealityV1-fp32-opset17.onnx (1.7 MB SPAN Real-Time 4x SR)..."
-          curl -L --fail --retry 5 --retry-delay 3 \
-            "https://huggingface.co/lenML/4x-ClearRealityV1/resolve/main/4x-ClearRealityV1-fp32-opset17.onnx" \
-            -o app/src/main/assets/models/4x-ClearRealityV1-fp32-opset17.onnx
+          for url in \
+            "https://huggingface.co/huggingworld/onnx-image-models/resolve/main/4x-ClearRealityV1-fp32-opset17.onnx" \
+            "https://huggingface.co/notaneimu/onnx-image-models/resolve/main/4x-ClearRealityV1-fp32-opset17.onnx" \
+            "https://huggingface.co/huggingworld/onnx-image-models/resolve/main/4x-ClearRealityV1.onnx" \
+            "https://huggingface.co/notaneimu/onnx-image-models/resolve/main/4x-ClearRealityV1.onnx"; do
+            if curl -L --fail --retry 3 --retry-delay 2 "$url" -o app/src/main/assets/models/4x-ClearRealityV1-fp32-opset17.onnx; then
+              if [ -s app/src/main/assets/models/4x-ClearRealityV1-fp32-opset17.onnx ] && [ $(stat -c%s app/src/main/assets/models/4x-ClearRealityV1-fp32-opset17.onnx) -gt 500000 ]; then
+                echo "Downloaded 4x-ClearRealityV1-fp32-opset17.onnx from $url"
+                break
+              fi
+            fi
+          done
+
           echo "Downloading realesr-general-wdn-x4v3.onnx (4.9 MB Official Real-ESRGAN With-DeNoise 4x SR)..."
-          curl -L --fail --retry 5 --retry-delay 3 \
-            "https://huggingface.co/qualcomm/Real-ESRGAN-General-x4v3/resolve/046941732946f1fd779fb3dc20bc0fb09fb2fb91/Real-ESRGAN-General-x4v3.onnx" \
-            -o app/src/main/assets/models/realesr-general-wdn-x4v3.onnx || \
-          curl -L --fail --retry 5 --retry-delay 3 \
-            "https://github.com/cszn/KAIR/releases/download/v1.0/realesr-general-wdn-x4v3.pth" \
-            -o /tmp/realesr.pth || true
-          if [ ! -s app/src/main/assets/models/realesr-general-wdn-x4v3.onnx ] || [ $(stat -c%s app/src/main/assets/models/realesr-general-wdn-x4v3.onnx) -lt 100000 ]; then
+          for url in \
+            "https://huggingface.co/huggingworld/onnx-image-models/resolve/main/realesr-general-wdn-x4v3.onnx" \
+            "https://huggingface.co/notaneimu/onnx-image-models/resolve/main/realesr-general-wdn-x4v3.onnx" \
+            "https://huggingface.co/ricardo-manuel-22/editoria-models/resolve/main/realesr-general-wdn-x4v3.onnx" \
+            "https://huggingface.co/Heliosoph/realesrgan-onnx/resolve/main/realesr-general-x4v3.onnx"; do
+            if curl -L --fail --retry 3 --retry-delay 2 "$url" -o app/src/main/assets/models/realesr-general-wdn-x4v3.onnx; then
+              if [ -s app/src/main/assets/models/realesr-general-wdn-x4v3.onnx ] && [ $(stat -c%s app/src/main/assets/models/realesr-general-wdn-x4v3.onnx) -gt 1000000 ]; then
+                echo "Downloaded realesr-general-wdn-x4v3.onnx from $url"
+                break
+              fi
+            fi
+          done
+
+          if [ ! -s app/src/main/assets/models/realesr-general-wdn-x4v3.onnx ] || [ $(stat -c%s app/src/main/assets/models/realesr-general-wdn-x4v3.onnx) -lt 500000 ]; then
             cp app/src/main/assets/models/4x-ClearRealityV1-fp32-opset17.onnx app/src/main/assets/models/realesr-general-wdn-x4v3.onnx
           fi
           ls -lh app/src/main/assets/models/
@@ -1024,7 +1041,6 @@ jobs:
           export ANDROID_HOME="$SDK_DIR"
           export ANDROID_SDK_ROOT="$SDK_DIR"
           echo "sdk.dir=$SDK_DIR" > local.properties
-          YES_PIPE=$(yes || true)
           if [ -x "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" ]; then
             yes | "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
             "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" > /dev/null 2>&1 || true
